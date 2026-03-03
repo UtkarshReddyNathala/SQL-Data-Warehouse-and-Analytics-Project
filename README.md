@@ -176,6 +176,18 @@ Enterprise-Data-Warehouse/
 * Unknown Key Mapping (-1)
 * Data partitions verified
 
+## Enterprise Security (Row-Level Security & Data Masking)
+
+The Gold layer includes database-level security controls using **SQL Server Row-Level Security (RLS)** and **Dynamic Data Masking**.
+
+* Access to `gold.fact_sales` is restricted based on customer country.
+* Security is enforced through a centralized mapping table and security policy.
+* Sensitive column `sales_amount` is masked for regular users.
+* Privileged users are granted UNMASK permission.
+* Security is implemented in: `scripts/security/ddl_security.sql`
+
+This ensures secure, multi-user analytics without requiring application-level filtering.
+
 ---
 
 ## 4️.Data Analytics & Business Reporting
