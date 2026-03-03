@@ -1,7 +1,8 @@
 /* ============================================================
    ENTERPRISE SECURITY FOR GOLD LAYER
-   - Row-Level Security Based on Customer Country
-   - Column Masking on sales_amount
+   - Role-Based Access Control (RBAC)
+   - Row-Level Security (RLS)
+   - Column-Level Security (Dynamic Data Masking)
    ============================================================ */
 
 ---------------------------------------------------------------
@@ -12,7 +13,17 @@ IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Security')
 GO
 
 ---------------------------------------------------------------
--- 2️ USER-COUNTRY MAPPING TABLE
+-- 2️ CREATE ROLES (RBAC)
+---------------------------------------------------------------
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'gold_analyst')
+    CREATE ROLE gold_analyst;
+
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'gold_manager')
+    CREATE ROLE gold_manager;
+GO
+
+---------------------------------------------------------------
+-- 3️ USER–COUNTRY ACCESS MAPPING TABLE
 ---------------------------------------------------------------
 IF OBJECT_ID('Security.UserCountryMapping') IS NOT NULL
     DROP TABLE Security.UserCountryMapping;
@@ -30,7 +41,7 @@ ON Security.UserCountryMapping(UserName);
 GO
 
 ---------------------------------------------------------------
--- 3️ SAMPLE USER ACCESS (FOR TESTING)
+-- 4️ SAMPLE USER ACCESS (FOR TESTING)
 ---------------------------------------------------------------
 INSERT INTO Security.UserCountryMapping VALUES
 ('IndiaUser', 'India'),
@@ -40,7 +51,7 @@ INSERT INTO Security.UserCountryMapping VALUES
 GO
 
 ---------------------------------------------------------------
--- 4️ CREATE RLS FUNCTION (JOINING DIMENSION)
+-- 5️ CREATE RLS FUNCTION
 ---------------------------------------------------------------
 IF OBJECT_ID('Security.fn_FilterFactSalesByCountry') IS NOT NULL
     DROP FUNCTION Security.fn_FilterFactSalesByCountry;
@@ -62,14 +73,14 @@ RETURN
 GO
 
 ---------------------------------------------------------------
--- 5️ DROP OLD POLICY IF EXISTS
+-- 6️ DROP OLD POLICY IF EXISTS
 ---------------------------------------------------------------
 IF EXISTS (SELECT * FROM sys.security_policies WHERE name = 'FactSalesCountryPolicy')
     DROP SECURITY POLICY Security.FactSalesCountryPolicy;
 GO
 
 ---------------------------------------------------------------
--- 6️ APPLY SECURITY POLICY TO FACT TABLE
+-- 7️ APPLY SECURITY POLICY
 ---------------------------------------------------------------
 CREATE SECURITY POLICY Security.FactSalesCountryPolicy
 ADD FILTER PREDICATE 
@@ -79,7 +90,7 @@ WITH (STATE = ON);
 GO
 
 ---------------------------------------------------------------
--- 7️ COLUMN MASKING ON SALES AMOUNT
+-- 8️ COLUMN-LEVEL SECURITY (DATA MASKING)
 ---------------------------------------------------------------
 BEGIN TRY
     ALTER TABLE gold.fact_sales
@@ -91,7 +102,7 @@ END CATCH;
 GO
 
 ---------------------------------------------------------------
--- 8️ CREATE TEST USERS (OPTIONAL)
+-- 9️ CREATE TEST USERS (NO LOGIN - DEMO PURPOSE)
 ---------------------------------------------------------------
 IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'IndiaUser')
     CREATE USER IndiaUser WITHOUT LOGIN;
@@ -103,12 +114,25 @@ IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'GlobalManager
     CREATE USER GlobalManager WITHOUT LOGIN;
 GO
 
-GRANT SELECT ON gold.fact_sales TO IndiaUser, USUser, GlobalManager;
+---------------------------------------------------------------
+-- 10 GRANT PERMISSIONS TO ROLES (NOT USERS)
+---------------------------------------------------------------
+GRANT SELECT ON gold.fact_sales TO gold_analyst;
+GRANT SELECT ON gold.dim_customers TO gold_analyst;
+
+GRANT SELECT ON SCHEMA::gold TO gold_manager;
+GRANT UNMASK TO gold_manager;
 GO
 
-GRANT UNMASK TO GlobalManager;
+---------------------------------------------------------------
+-- 11 ADD USERS TO ROLES
+---------------------------------------------------------------
+ALTER ROLE gold_analyst ADD MEMBER IndiaUser;
+ALTER ROLE gold_analyst ADD MEMBER USUser;
+
+ALTER ROLE gold_manager ADD MEMBER GlobalManager;
 GO
 
 /* ============================================================
-   END OF GOLD SECURITY SCRIPT
+   END OF ENTERPRISE SECURITY SCRIPT (RBAC + RLS + MASKING)
    ============================================================ */
