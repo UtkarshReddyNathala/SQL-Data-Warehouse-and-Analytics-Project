@@ -1,9 +1,7 @@
 /* ============================================================
-   ENTERPRISE SECURITY LAYER
-   - Row-Level Security (Region Based)
-   - Multi-Tenant Isolation
-   - Column-Level Masking
-   - Block Predicate Protection
+   ENTERPRISE SECURITY FOR GOLD LAYER
+   - Row-Level Security Based on Customer Country
+   - Column Masking on sales_amount
    ============================================================ */
 
 ---------------------------------------------------------------
@@ -14,158 +12,103 @@ IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Security')
 GO
 
 ---------------------------------------------------------------
--- 2️ USER-REGION MAPPING TABLE
+-- 2️ USER-COUNTRY MAPPING TABLE
 ---------------------------------------------------------------
-IF OBJECT_ID('Security.UserRegionMapping') IS NOT NULL
-    DROP TABLE Security.UserRegionMapping;
+IF OBJECT_ID('Security.UserCountryMapping') IS NOT NULL
+    DROP TABLE Security.UserCountryMapping;
 GO
 
-CREATE TABLE Security.UserRegionMapping (
+CREATE TABLE Security.UserCountryMapping (
     UserName SYSNAME NOT NULL,
-    Region NVARCHAR(50) NOT NULL,
-    CONSTRAINT PK_UserRegion PRIMARY KEY (UserName, Region)
+    Country NVARCHAR(50) NOT NULL,
+    CONSTRAINT PK_UserCountry PRIMARY KEY (UserName, Country)
 );
 GO
 
-CREATE INDEX IX_UserRegion_UserName
-ON Security.UserRegionMapping(UserName);
+CREATE INDEX IX_UserCountry_UserName
+ON Security.UserCountryMapping(UserName);
 GO
 
 ---------------------------------------------------------------
--- 3️ USER-TENANT MAPPING TABLE
+-- 3️ SAMPLE USER ACCESS (FOR TESTING)
 ---------------------------------------------------------------
-IF OBJECT_ID('Security.UserTenantMapping') IS NOT NULL
-    DROP TABLE Security.UserTenantMapping;
-GO
-
-CREATE TABLE Security.UserTenantMapping (
-    UserName SYSNAME NOT NULL PRIMARY KEY,
-    TenantID INT NOT NULL
-);
-GO
-
-CREATE INDEX IX_UserTenant_UserName
-ON Security.UserTenantMapping(UserName);
+INSERT INTO Security.UserCountryMapping VALUES
+('IndiaUser', 'India'),
+('USUser', 'United States'),
+('GlobalManager', 'India'),
+('GlobalManager', 'United States');
 GO
 
 ---------------------------------------------------------------
--- 4️ SAMPLE MAPPINGS (FOR TESTING)
+-- 4️ CREATE RLS FUNCTION (JOINING DIMENSION)
 ---------------------------------------------------------------
-INSERT INTO Security.UserRegionMapping VALUES
-('NorthUser', 'North'),
-('SouthUser', 'South'),
-('ManagerUser', 'North'),
-('ManagerUser', 'South');
-
-INSERT INTO Security.UserTenantMapping VALUES
-('TenantUser1', 1),
-('TenantUser2', 2);
+IF OBJECT_ID('Security.fn_FilterFactSalesByCountry') IS NOT NULL
+    DROP FUNCTION Security.fn_FilterFactSalesByCountry;
 GO
 
----------------------------------------------------------------
--- 5️ ENSURE FACT TABLE HAS TENANT COLUMN
----------------------------------------------------------------
-IF COL_LENGTH('dbo.FactSales', 'TenantID') IS NULL
-BEGIN
-    ALTER TABLE dbo.FactSales
-    ADD TenantID INT NOT NULL DEFAULT 1;
-END
-GO
-
----------------------------------------------------------------
--- 6️ REGION FILTER FUNCTION
----------------------------------------------------------------
-IF OBJECT_ID('Security.fn_FilterSalesByRegion') IS NOT NULL
-    DROP FUNCTION Security.fn_FilterSalesByRegion;
-GO
-
-CREATE FUNCTION Security.fn_FilterSalesByRegion(@Region NVARCHAR(50))
+CREATE FUNCTION Security.fn_FilterFactSalesByCountry(@customer_key INT)
 RETURNS TABLE
 WITH SCHEMABINDING
 AS
 RETURN
 (
     SELECT 1 AS fn_result
-    FROM Security.UserRegionMapping urm
-    WHERE urm.UserName = USER_NAME()
-      AND urm.Region = @Region
+    FROM gold.dim_customers dc
+    JOIN Security.UserCountryMapping ucm
+        ON dc.country = ucm.Country
+    WHERE dc.customer_key = @customer_key
+      AND ucm.UserName = USER_NAME()
 );
 GO
 
 ---------------------------------------------------------------
--- 7️ TENANT FILTER FUNCTION
+-- 5️ DROP OLD POLICY IF EXISTS
 ---------------------------------------------------------------
-IF OBJECT_ID('Security.fn_FilterByTenant') IS NOT NULL
-    DROP FUNCTION Security.fn_FilterByTenant;
-GO
-
-CREATE FUNCTION Security.fn_FilterByTenant(@TenantID INT)
-RETURNS TABLE
-WITH SCHEMABINDING
-AS
-RETURN
-(
-    SELECT 1 AS fn_result
-    FROM Security.UserTenantMapping utm
-    WHERE utm.UserName = USER_NAME()
-      AND utm.TenantID = @TenantID
-);
+IF EXISTS (SELECT * FROM sys.security_policies WHERE name = 'FactSalesCountryPolicy')
+    DROP SECURITY POLICY Security.FactSalesCountryPolicy;
 GO
 
 ---------------------------------------------------------------
--- 8️ DROP OLD POLICIES IF EXIST
+-- 6️ APPLY SECURITY POLICY TO FACT TABLE
 ---------------------------------------------------------------
-IF EXISTS (SELECT * FROM sys.security_policies WHERE name = 'SalesRegionPolicy')
-    DROP SECURITY POLICY Security.SalesRegionPolicy;
-GO
-
-IF EXISTS (SELECT * FROM sys.security_policies WHERE name = 'TenantIsolationPolicy')
-    DROP SECURITY POLICY Security.TenantIsolationPolicy;
-GO
-
----------------------------------------------------------------
--- 9️ CREATE SECURITY POLICIES
----------------------------------------------------------------
-CREATE SECURITY POLICY Security.SalesRegionPolicy
+CREATE SECURITY POLICY Security.FactSalesCountryPolicy
 ADD FILTER PREDICATE 
-Security.fn_FilterSalesByRegion(Region)
-ON dbo.FactSales
-WITH (STATE = ON);
-GO
-
-CREATE SECURITY POLICY Security.TenantIsolationPolicy
-ADD FILTER PREDICATE 
-Security.fn_FilterByTenant(TenantID)
-ON dbo.FactSales,
-ADD BLOCK PREDICATE 
-Security.fn_FilterByTenant(TenantID)
-ON dbo.FactSales AFTER INSERT
+Security.fn_FilterFactSalesByCountry(customer_key)
+ON gold.fact_sales
 WITH (STATE = ON);
 GO
 
 ---------------------------------------------------------------
--- 10 COLUMN-LEVEL MASKING (OPTIONAL SENSITIVE COLUMN)
+-- 7️ COLUMN MASKING ON SALES AMOUNT
 ---------------------------------------------------------------
 BEGIN TRY
-    ALTER TABLE dbo.FactSales
-    ALTER COLUMN SalesAmount 
+    ALTER TABLE gold.fact_sales
+    ALTER COLUMN sales_amount 
     ADD MASKED WITH (FUNCTION = 'default()');
 END TRY
 BEGIN CATCH
-    -- Ignore if already masked
-END CATCH
+END CATCH;
 GO
 
 ---------------------------------------------------------------
--- 11 GRANT UNMASK TO MANAGER
+-- 8️ CREATE TEST USERS (OPTIONAL)
 ---------------------------------------------------------------
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'ManagerUser')
-    CREATE USER ManagerUser WITHOUT LOGIN;
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'IndiaUser')
+    CREATE USER IndiaUser WITHOUT LOGIN;
+
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'USUser')
+    CREATE USER USUser WITHOUT LOGIN;
+
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'GlobalManager')
+    CREATE USER GlobalManager WITHOUT LOGIN;
 GO
 
-GRANT UNMASK TO ManagerUser;
+GRANT SELECT ON gold.fact_sales TO IndiaUser, USUser, GlobalManager;
+GO
+
+GRANT UNMASK TO GlobalManager;
 GO
 
 /* ============================================================
-   END OF ENTERPRISE SECURITY SCRIPT
+   END OF GOLD SECURITY SCRIPT
    ============================================================ */
