@@ -7,7 +7,7 @@
 
 This project is an end-to-end **Data Warehouse solution** built using **Microsoft SQL Server**.
 
-Data is extracted from **CRM and ERP source systems (CSV extracts)** and processed through a structured **Medellion architecture(Bronze → Silver → Gold** using **Stored Procedures**.
+Data is extracted from **CRM and ERP source systems (CSV extracts)** and processed through a structured **Medallion architecture(Bronze → Silver → Gold** using **Stored Procedures**.
 
 The system performs **ETL (Extract, Transform, Load)**, applies **Data Cleaning and Data Quality Checks**, builds a **Star Schema model**, and supports **Advanced SQL Analytics**. A centralized **Audit & Governance** Framework ensures data is tracked, monitored, and reliable.
 
@@ -176,17 +176,25 @@ Enterprise-Data-Warehouse/
 * Unknown Key Mapping (-1)
 * Data partitions verified
 
-## Enterprise Security (Row-Level Security & Data Masking)
+Perfect 👍 keep it short and sharp.
 
-The Gold layer includes database-level security controls using **SQL Server Row-Level Security (RLS)** and **Dynamic Data Masking**.
+Add this small section in your README (that’s it — nothing more):
 
-* Access to `gold.fact_sales` is restricted based on customer country.
-* Security is enforced through a centralized mapping table and security policy.
-* Sensitive column `sales_amount` is masked for regular users.
-* Privileged users are granted UNMASK permission.
-* Security is implemented in: `scripts/security/ddl_security.sql`
+---
 
-This ensures secure, multi-user analytics without requiring application-level filtering.
+## Enterprise Security (Gold Layer)
+The Gold layer implements database-level security using SQL Server features:
+
+* **Role-Based Access Control (RBAC)**
+  Roles (`gold_analyst`, `gold_manager`) are granted permissions instead of users directly.
+
+* **Row-Level Security (RLS)**
+  Access to `gold.fact_sales` is filtered by customer country using a security policy and mapping table.
+
+* **Dynamic Data Masking**
+  `sales_amount` is masked for analysts. Managers are granted `UNMASK` permission.
+
+Security is enforced at the database level, ensuring controlled and production-style access to reporting data.
 
 ---
 
