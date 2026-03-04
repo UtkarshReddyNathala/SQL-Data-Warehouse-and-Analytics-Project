@@ -200,18 +200,19 @@ Add this small section in your README (that’s it — nothing more):
 ---
 
 ## Enterprise Security (Gold Layer)
+
 The Gold layer implements database-level security using SQL Server features:
 
-* **Role-Based Access Control (RBAC)**
-  Roles (`gold_analyst`, `gold_manager`) are granted permissions instead of users directly.
+**Role-Based Access Control (RBAC)** Users are assigned roles (gold_analyst, gold_manager). Permissions are given to roles, not directly to users.
 
-* **Row-Level Security (RLS)**
-  Access to `gold.fact_sales` is filtered by customer country using a security policy and mapping table.
+**Row-Level Security (RLS)** Users can only see sales data for the countries they are allowed to access.
 
-* **Dynamic Data Masking**
-  `sales_amount` is masked for analysts. Managers are granted `UNMASK` permission.
+**Dynamic Data Masking** The sales_amount column is hidden (masked) for analysts. Managers can see the real values.
 
-Security is enforced at the database level, ensuring controlled and production-style access to reporting data.
+**Data Classification & Auditing** ensitive customer data is labeled, and data access activity is tracked.
+
+Security is enforced at the database level, ensuring controlled, production-ready access to reporting data.
+
 
 ---
 
