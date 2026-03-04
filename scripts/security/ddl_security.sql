@@ -1,96 +1,105 @@
 /* ============================================================
-   ENTERPRISE SECURITY FOR GOLD LAYER
-   - Role-Based Access Control (RBAC)
-   - Row-Level Security (RLS)
-   - Column-Level Security (Dynamic Data Masking)
+   Gold Layer Security Configuration
+   - RBAC
+   - Row Level Security
+   - Data Masking
+   - Sensitivity Classification
+   - Audit Specification
    ============================================================ */
 
 ---------------------------------------------------------------
--- 1️ CREATE SECURITY SCHEMA
+-- Create Security Schema
 ---------------------------------------------------------------
-IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Security')
-    EXEC('CREATE SCHEMA Security');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'Security')
+    EXEC ('CREATE SCHEMA Security');
 GO
 
+
 ---------------------------------------------------------------
--- 2️ CREATE ROLES (RBAC)
+-- Create Application Roles
 ---------------------------------------------------------------
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'gold_analyst')
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'gold_analyst')
     CREATE ROLE gold_analyst;
 
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'gold_manager')
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'gold_manager')
     CREATE ROLE gold_manager;
 GO
 
+
 ---------------------------------------------------------------
--- 3️ USER–COUNTRY ACCESS MAPPING TABLE
+-- User Country Mapping (Used for RLS)
 ---------------------------------------------------------------
-IF OBJECT_ID('Security.UserCountryMapping') IS NOT NULL
+IF OBJECT_ID('Security.UserCountryMapping', 'U') IS NOT NULL
     DROP TABLE Security.UserCountryMapping;
 GO
 
-CREATE TABLE Security.UserCountryMapping (
+CREATE TABLE Security.UserCountryMapping
+(
     UserName SYSNAME NOT NULL,
-    Country NVARCHAR(50) NOT NULL,
-    CONSTRAINT PK_UserCountry PRIMARY KEY (UserName, Country)
+    Country  NVARCHAR(50) NOT NULL,
+    CONSTRAINT PK_UserCountryMapping 
+        PRIMARY KEY (UserName, Country)
 );
 GO
 
-CREATE INDEX IX_UserCountry_UserName
+CREATE INDEX IX_UserCountryMapping_UserName
 ON Security.UserCountryMapping(UserName);
 GO
 
+
 ---------------------------------------------------------------
--- 4️ SAMPLE USER ACCESS (FOR TESTING)
+-- Sample Access Mapping (Demo Users)
 ---------------------------------------------------------------
-INSERT INTO Security.UserCountryMapping VALUES
+INSERT INTO Security.UserCountryMapping (UserName, Country)
+VALUES 
 ('IndiaUser', 'India'),
 ('USUser', 'United States'),
 ('GlobalManager', 'India'),
 ('GlobalManager', 'United States');
 GO
 
+
 ---------------------------------------------------------------
--- 5️ CREATE RLS FUNCTION
+-- Row Level Security Function
 ---------------------------------------------------------------
-IF OBJECT_ID('Security.fn_FilterFactSalesByCountry') IS NOT NULL
+IF OBJECT_ID('Security.fn_FilterFactSalesByCountry', 'IF') IS NOT NULL
     DROP FUNCTION Security.fn_FilterFactSalesByCountry;
 GO
 
-CREATE FUNCTION Security.fn_FilterFactSalesByCountry(@customer_key INT)
+CREATE FUNCTION Security.fn_FilterFactSalesByCountry (@customer_key INT)
 RETURNS TABLE
 WITH SCHEMABINDING
 AS
 RETURN
 (
-    SELECT 1 AS fn_result
+    SELECT 1 AS access_granted
     FROM gold.dim_customers dc
-    JOIN Security.UserCountryMapping ucm
+    INNER JOIN Security.UserCountryMapping ucm
         ON dc.country = ucm.Country
     WHERE dc.customer_key = @customer_key
       AND ucm.UserName = USER_NAME()
 );
 GO
 
+
 ---------------------------------------------------------------
--- 6️ DROP OLD POLICY IF EXISTS
+-- Apply Security Policy to Fact Table
 ---------------------------------------------------------------
-IF EXISTS (SELECT * FROM sys.security_policies WHERE name = 'FactSalesCountryPolicy')
+IF EXISTS (SELECT 1 FROM sys.security_policies 
+           WHERE name = 'FactSalesCountryPolicy')
     DROP SECURITY POLICY Security.FactSalesCountryPolicy;
 GO
 
----------------------------------------------------------------
--- 7️ APPLY SECURITY POLICY
----------------------------------------------------------------
 CREATE SECURITY POLICY Security.FactSalesCountryPolicy
 ADD FILTER PREDICATE 
-Security.fn_FilterFactSalesByCountry(customer_key)
+    Security.fn_FilterFactSalesByCountry(customer_key)
 ON gold.fact_sales
 WITH (STATE = ON);
 GO
 
+
 ---------------------------------------------------------------
--- 8️ COLUMN-LEVEL SECURITY (DATA MASKING)
+-- Dynamic Data Masking
 ---------------------------------------------------------------
 BEGIN TRY
     ALTER TABLE gold.fact_sales
@@ -98,34 +107,54 @@ BEGIN TRY
     ADD MASKED WITH (FUNCTION = 'default()');
 END TRY
 BEGIN CATCH
+    -- Ignore if already masked
 END CATCH;
 GO
 
+
 ---------------------------------------------------------------
--- 9️ CREATE TEST USERS (NO LOGIN - DEMO PURPOSE)
+-- Sensitivity Classification
 ---------------------------------------------------------------
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'IndiaUser')
+ADD SENSITIVITY CLASSIFICATION 
+TO gold.dim_customers.first_name
+WITH (LABEL = 'Confidential', INFORMATION_TYPE = 'Personal Data');
+
+ADD SENSITIVITY CLASSIFICATION 
+TO gold.dim_customers.last_name
+WITH (LABEL = 'Confidential', INFORMATION_TYPE = 'Personal Data');
+
+ADD SENSITIVITY CLASSIFICATION 
+TO gold.dim_customers.birthdate
+WITH (LABEL = 'Sensitive', INFORMATION_TYPE = 'Personal Data');
+GO
+
+
+---------------------------------------------------------------
+-- Create Demo Users (Database-Level Only)
+---------------------------------------------------------------
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'IndiaUser')
     CREATE USER IndiaUser WITHOUT LOGIN;
 
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'USUser')
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'USUser')
     CREATE USER USUser WITHOUT LOGIN;
 
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'GlobalManager')
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'GlobalManager')
     CREATE USER GlobalManager WITHOUT LOGIN;
 GO
 
+
 ---------------------------------------------------------------
--- 10 GRANT PERMISSIONS TO ROLES (NOT USERS)
+-- Grant Schema-Level Permissions
 ---------------------------------------------------------------
-GRANT SELECT ON gold.fact_sales TO gold_analyst;
-GRANT SELECT ON gold.dim_customers TO gold_analyst;
+GRANT SELECT ON SCHEMA::gold TO gold_analyst;
 
 GRANT SELECT ON SCHEMA::gold TO gold_manager;
 GRANT UNMASK TO gold_manager;
 GO
 
+
 ---------------------------------------------------------------
--- 11 ADD USERS TO ROLES
+-- Assign Users to Roles
 ---------------------------------------------------------------
 ALTER ROLE gold_analyst ADD MEMBER IndiaUser;
 ALTER ROLE gold_analyst ADD MEMBER USUser;
@@ -133,6 +162,22 @@ ALTER ROLE gold_analyst ADD MEMBER USUser;
 ALTER ROLE gold_manager ADD MEMBER GlobalManager;
 GO
 
-/* ============================================================
-   END OF ENTERPRISE SECURITY SCRIPT (RBAC + RLS + MASKING)
-   ============================================================ */
+
+---------------------------------------------------------------
+-- Audit Specification (Tracks SELECT on Gold Schema)
+---------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 
+    FROM sys.database_audit_specifications 
+    WHERE name = 'GoldAuditSpec'
+)
+BEGIN
+    CREATE DATABASE AUDIT SPECIFICATION GoldAuditSpec
+    FOR SERVER AUDIT Audit_GoldLayer
+    ADD (SELECT ON SCHEMA::gold BY PUBLIC)
+    WITH (STATE = ON);
+END
+GO
+
+
+PRINT 'Gold layer security configuration completed.';
