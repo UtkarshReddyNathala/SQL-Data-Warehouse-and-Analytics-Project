@@ -208,10 +208,6 @@ Enterprise-Data-Warehouse/
 * Unknown Key Mapping (-1)
 * Data partitions verified
 
-Perfect 👍 keep it short and sharp.
-
-Add this small section in your README (that’s it — nothing more):
-
 ---
 
 ## Enterprise Security (Gold Layer)
