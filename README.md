@@ -1,4 +1,4 @@
-#  Enterprise SQL Data Warehouse And Analytics Project.
+#  Enterprise SQL Data Warehouse And Analytics Project..
 
 ### Medallion Architecture | Metadata-Driven ETL | Slowly Changing Dimensions 1 and 2 | Change Data Capture | Data Governance | Star Schema
 ---
