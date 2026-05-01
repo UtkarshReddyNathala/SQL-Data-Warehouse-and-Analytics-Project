@@ -26,7 +26,7 @@ The system performs **ETL (Extract, Transform, Load)**, applies Data Cleaning an
 - **Lack of governance and monitoring in ETL pipelines:** Built an audit framework to track ETL runs, detect data quality issues, and log pipeline execution.
 
 - **Slow analytical queries on transactional data:** Designed a star schema with partitioning and columnstore indexing for faster analytics.
-
+.
  --- 
 
 ### Core Capabilities
